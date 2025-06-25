@@ -20,11 +20,13 @@ const scamUpdateSchema = new mongoose.Schema({
   type: { type: String },
 });
 
+const allowedSourceTypes = ['text', 'image', 'url', 'phone'];
+
 const scamDetectionResultSchema = new mongoose.Schema({
   content: { type: String, required: true },
   result: { type: String, enum: ['scam', 'safe'], required: true },
   explanation: { type: String },
-  sourceType: { type: String, enum: ['text', 'image', 'url'], required: true },
+  sourceType: { type: String, enum: allowedSourceTypes, required: true },
   date: { type: Date, default: Date.now },
 });
 
@@ -80,7 +82,6 @@ const scamWatchlistSchema = new mongoose.Schema({
   dateAdded: { type: Date, default: Date.now },
 });
 
-// ✅ Avoid OverwriteModelError using mongoose.models
 export const User = mongoose.models.User || mongoose.model('User', userSchema);
 export const ScamUpdate = mongoose.models.ScamUpdate || mongoose.model('ScamUpdate', scamUpdateSchema);
 export const ScamWatchlist = mongoose.models.ScamWatchlist || mongoose.model('ScamWatchlist', scamWatchlistSchema);
