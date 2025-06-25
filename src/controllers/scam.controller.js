@@ -3,10 +3,11 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { checkScamWithLLM } from '../utils/llmHelper.js';
 import { User, ScamUpdate, ScamWatchlist } from '../models/user.model.js';
 import { uploadOnCloudinary } from '../utils/cloudinary.js';
+import axios from 'axios';
 
 
 
-// 📌 Check plain text
+
 export const checkScamText = asyncHandler(async (req, res) => {
   const { text } = req.body;
   console.log('Received text for scam check:', text);
@@ -48,7 +49,7 @@ export const getScamDetectionHistory = asyncHandler(async (req, res) => {
   res.status(200).json({ history: user.scamDetectionHistory });
 });
 
-// ✅ Scam Updates (admin/public)
+
 export const addScamUpdate = asyncHandler(async (req, res) => {
   const { title, description, type } = req.body;
   if (!title || !description || !type) return res.status(400).json({ error: 'Fields missing' });
@@ -66,7 +67,7 @@ export const deleteScamUpdate = asyncHandler(async (req, res) => {
   res.status(200).json({ message: 'Scam update deleted' });
 });
 
-// ✅ Scam Analytics
+
 export const getUserScamAnalytics = asyncHandler(async (req, res) => {
   const last30 = new Date();
   last30.setDate(last30.getDate() - 30);
@@ -78,7 +79,7 @@ export const getUserScamAnalytics = asyncHandler(async (req, res) => {
   res.status(200).json({ totalScams, typeCount, safetyScore });
 });
 
-// ✅ Watchlist Management
+
 export const addToWatchlist = asyncHandler(async (req, res) => {
   const { value, type } = req.body;
   if (!value || !type) return res.status(400).json({ error: 'Value and type required' });
@@ -93,54 +94,76 @@ export const getWatchlist = asyncHandler(async (req, res) => {
 
 
 
-// 📌 Check URL Scam
+
+
+
+const GOOGLE_SAFE_BROWSING_API_KEY = process.env.GOOGLE_SAFE_BROWSING_API_KEY;
+
 export const checkScamUrl = asyncHandler(async (req, res) => {
   const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'URL is required' });
 
-  if (!url) {
-    return res.status(400).json({ error: 'URL is required' });
-  }
+  /
+  const response = await axios.post(
+    `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${GOOGLE_SAFE_BROWSING_API_KEY}`,
+    {
+      client: {
+        clientId: "yourappname",
+        clientVersion: "1.0.0"
+      },
+      threatInfo: {
+        threatTypes: ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
+        platformTypes: ["ANY_PLATFORM"],
+        threatEntryTypes: ["URL"],
+        threatEntries: [{ url }]
+      }
+    }
+  );
 
-  // LLM check (or regex/basic checks first)
-  const scamResult = await checkScamWithLLM(`Is this URL a scam: ${url}`);
+  const isScam = response.data && response.data.matches && response.data.matches.length > 0;
 
   const user = await User.findById(req.user._id);
   user.scamDetectionHistory.push({
     content: url,
-    result: scamResult.result,
-    explanation: scamResult.explanation,
-    sourceType: 'url',
+    result: isScam ? 'scam' : 'safe',
+    explanation: isScam ? 'URL flagged by Google Safe Browsing' : 'URL not flagged',
+    sourceType: 'url'
   });
   await user.save();
 
-  res.status(200).json({ scamResult });
+  res.status(200).json({
+    result: isScam ? 'scam' : 'safe',
+    explanation: isScam ? 'URL flagged by Google Safe Browsing' : 'URL not flagged'
+  });
 });
 
 
+
+const IPQS_API_KEY = process.env.IPQS_API_KEY;
+
 export const checkPhoneNumberReputation = asyncHandler(async (req, res) => {
   const { phoneNumber } = req.body;
+  if (!phoneNumber) return res.status(400).json({ error: 'Phone number is required' });
 
-  if (!phoneNumber) {
-    return res.status(400).json({ error: 'Phone number is required' });
-  }
-
-  // Check in your watchlist DB
   const found = await ScamWatchlist.findOne({ value: phoneNumber, type: 'phone' });
-
   if (found) {
     return res.status(200).json({
       result: 'scam',
       reason: 'Reported by users',
-      dateAdded: found.dateAdded,
+      dateAdded: found.dateAdded
     });
   }
 
-  // Optional LLM analysis
-  const scamResult = await checkScamWithLLM(`Is this phone number a scam: ${phoneNumber}?`);
+  
+  const response = await axios.get(`https://ipqualityscore.com/api/json/phone/${IPQS_API_KEY}/${phoneNumber}`);
+
+  const isScam = response.data && response.data.spam_score && response.data.spam_score >= 80;
 
   res.status(200).json({
-    result: scamResult.result,
-    explanation: scamResult.explanation,
+    result: isScam ? 'scam' : 'safe',
+    explanation: isScam
+      ? `High spam score (${response.data.spam_score}) from IPQS`
+      : `Low spam score (${response.data.spam_score}) from IPQS`
   });
 });
 
@@ -153,7 +176,7 @@ export const reportScamEntry = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Value and valid type (phone/email/url) are required' });
   }
 
-  // Check if already exists
+
   const existing = await ScamWatchlist.findOne({ value, type });
   if (existing) {
     return res.status(400).json({ error: 'This entry is already reported.' });
