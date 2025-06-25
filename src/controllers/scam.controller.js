@@ -47,9 +47,6 @@ export const checkScamImage = asyncHandler(async (req, res) => {
   res.status(200).json({ scamResult, extractedText: text });
 });
 
-import axios from 'axios';
-import { asyncHandler } from '../utils/asyncHandler.js';
-import { User, ScamWatchlist } from '../models/user.model.js';
 
 const IPQS_API_KEY = process.env.IPQS_API_KEY;
 
