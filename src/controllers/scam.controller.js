@@ -5,8 +5,7 @@ import { uploadOnCloudinary } from '../utils/cloudinary.js';
 import { User, ScamUpdate, ScamWatchlist } from '../models/user.model.js';
 import { checkScamWithLLM } from '../utils/llmHelper.js';
 
-const GOOGLE_SAFE_BROWSING_API_KEY = process.env.GOOGLE_SAFE_BROWSING_API_KEY;
-const IPQS_API_KEY = process.env.IPQS_API_KEY;
+
 
 export const checkScamText = asyncHandler(async (req, res) => {
   const { text } = req.body;
