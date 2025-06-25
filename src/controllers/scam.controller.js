@@ -47,40 +47,44 @@ export const checkScamImage = asyncHandler(async (req, res) => {
   res.status(200).json({ scamResult, extractedText: text });
 });
 
+import axios from 'axios';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { User, ScamWatchlist } from '../models/user.model.js';
+
+const IPQS_API_KEY = process.env.IPQS_API_KEY;
+
 export const checkScamUrl = asyncHandler(async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
-  const response = await axios.post(
-    `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${GOOGLE_SAFE_BROWSING_API_KEY}`,
-    {
-      client: {
-        clientId: "finccloak",
-        clientVersion: "1.0"
-      },
-      threatInfo: {
-        threatTypes: ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
-        platformTypes: ["ANY_PLATFORM"],
-        threatEntryTypes: ["URL"],
-        threatEntries: [{ url }]
-      }
-    }
-  );
+  const response = await axios.get(`https://ipqualityscore.com/api/json/url/${IPQS_API_KEY}/${encodeURIComponent(url)}`);
+  const data = response.data;
 
-  const isScam = response.data && response.data.matches && response.data.matches.length > 0;
+  const isScam = data.risk_score >= 70 || data.suspicious || data.phishing;
 
   const user = await User.findById(req.user._id);
   user.scamDetectionHistory.push({
     content: url,
     result: isScam ? 'scam' : 'safe',
-    explanation: isScam ? 'URL flagged by Google Safe Browsing' : 'URL not flagged',
+    explanation: `Risk Score: ${data.risk_score}/100, Suspicious: ${data.suspicious}, Phishing: ${data.phishing}, Malicious: ${data.malware}`,
     sourceType: 'url'
   });
   await user.save();
 
   res.status(200).json({
     result: isScam ? 'scam' : 'safe',
-    explanation: isScam ? 'URL flagged by Google Safe Browsing' : 'URL not flagged'
+    details: {
+      risk_score: data.risk_score,
+      suspicious: data.suspicious,
+      phishing: data.phishing,
+      malware: data.malware,
+      unsafe: data.unsafe,
+      domain: data.domain,
+      server: data.server,
+      page_title: data.page_title,
+      country: data.country_code
+    },
+    explanation: `Risk Score: ${data.risk_score}/100, Suspicious: ${data.suspicious}, Phishing: ${data.phishing}, Malicious: ${data.malware}`
   });
 });
 
@@ -97,26 +101,35 @@ export const checkPhoneNumberReputation = asyncHandler(async (req, res) => {
     });
   }
 
-  const response = await axios.get(`https://ipqualityscore.com/api/json/phone/${IPQS_API_KEY}/${phoneNumber}`);
+  const response = await axios.get(`https://ipqualityscore.com/api/json/phone/${IPQS_API_KEY}/${encodeURIComponent(phoneNumber)}`);
+  const data = response.data;
 
-  const isScam = response.data && response.data.spam_score && response.data.spam_score >= 80;
+  const isScam = data.fraud_score >= 70 || data.recent_abuse || data.spammer;
 
   const user = await User.findById(req.user._id);
   user.scamDetectionHistory.push({
     content: phoneNumber,
     result: isScam ? 'scam' : 'safe',
-    explanation: isScam
-      ? `High spam score (${response.data.spam_score}) from IPQS`
-      : `Low spam score (${response.data.spam_score}) from IPQS`,
+    explanation: `Fraud Score: ${data.fraud_score}/100, Spammer: ${data.spammer}, Recent Abuse: ${data.recent_abuse}, Active: ${data.active}, Line Type: ${data.line_type}, Carrier: ${data.carrier}`,
     sourceType: 'phone'
   });
   await user.save();
 
   res.status(200).json({
     result: isScam ? 'scam' : 'safe',
-    explanation: isScam
-      ? `High spam score (${response.data.spam_score}) from IPQS`
-      : `Low spam score (${response.data.spam_score}) from IPQS`
+    details: {
+      fraud_score: data.fraud_score,
+      spammer: data.spammer,
+      recent_abuse: data.recent_abuse,
+      active: data.active,
+      line_type: data.line_type,
+      carrier: data.carrier,
+      country: data.country,
+      city: data.city,
+      do_not_call: data.do_not_call,
+      timezone: data.timezone
+    },
+    explanation: `Fraud Score: ${data.fraud_score}/100, Spammer: ${data.spammer}, Recent Abuse: ${data.recent_abuse}, Active: ${data.active}, Line Type: ${data.line_type}, Carrier: ${data.carrier}`
   });
 });
 
